@@ -32,3 +32,7 @@ pytest -s tests/comm/test_trtllm_moe_alltoall.py
 # nvshmem ar
 pytest -s tests/comm/test_nvshmem.py
 pytest -s tests/comm/test_nvshmem_allreduce.py
+# fp8 quantized two-shot allreduce (symmetric memory). Single-node, needs >=2 SM90+ GPUs;
+# the test self-skips on <2 GPUs, so this line is safe on the 1-GPU default but only exercises
+# the kernel when the comm runner exposes >=2 GPUs (as it already does for the AR tests above).
+pytest -s tests/comm/test_quantized_allreduce.py
