@@ -551,6 +551,39 @@ def _get_checkpointing_ssu_runner(
     )
 
 
+# (runner, device, batch) -> (AutoTuner.lookup_epoch(), (runner, tactic))
+_tactic_memo: dict[tuple[Any, ...], tuple[int, tuple[Any, Any]]] = {}
+
+
+def _choose_checkpointing_ssu_tactic(
+    runner: CheckpointingSSURunner, inputs: list[Any]
+) -> tuple[Any, Any]:
+    """AutoTuner choice for a dense call, reused per batch size.
+
+    The runner fixes every non-batch shape, so outside tuning the choice only
+    depends on the batch bucket. Reusing it while the tuner's winners are
+    unchanged skips building the tuning config and the AutoTuner lookup on
+    every call.
+    """
+    tuner = AutoTuner.get()
+    epoch = tuner.lookup_epoch()
+    x = inputs[1]
+    key = (runner, x.device, x.size(0))
+    if epoch is not None:
+        memo = _tactic_memo.get(key)
+        if memo is not None and memo[0] == epoch:
+            return memo[1]
+    choice = tuner.choose_one(
+        "checkpointing_ssu",
+        [runner],
+        runner.get_tuning_config(inputs),
+        inputs,
+    )
+    if epoch is not None:
+        _tactic_memo[key] = (epoch, choice)
+    return choice
+
+
 @register_custom_op(
     "flashinfer::checkpointing_ssu",
     mutates_args=(
@@ -684,12 +717,7 @@ def _checkpointing_ssu(
         and cu_seqlens is None
     )
     if tune:
-        runner, tactic = AutoTuner.get().choose_one(
-            "checkpointing_ssu",
-            [runner],
-            runner.get_tuning_config(inputs),
-            inputs,
-        )
+        runner, tactic = _choose_checkpointing_ssu_tactic(runner, inputs)
         runner(inputs, tactic=tactic)
     else:
         runner(inputs, tactic=-1)

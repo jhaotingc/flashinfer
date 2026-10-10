@@ -996,6 +996,7 @@ def autotune(
             tuner._namespaced_records.clear()
             tuner._dirty_namespaces.clear()
             tuner._logged_file_hits.clear()
+            tuner._lookup_epoch += 1
         if os.path.isfile(cache):
             tuner.load_configs(cache)
         else:
@@ -1637,6 +1638,9 @@ class AutoTuner:
         # Set when new profiling results are added; cleared on save.
         self._dirty = False
         self._dirty_seq = 0
+        # Monotonic counter bumped whenever in-memory or file-loaded winners
+        # change; see lookup_epoch().
+        self._lookup_epoch = 0
         # Product-owned current-schema records persisted beside tactic records.
         self._namespaced_records: dict[str, dict[str, Any]] = {}
         # Namespaces changed in this process and requiring single-writer checks.
@@ -1914,6 +1918,25 @@ class AutoTuner:
                 tuning_config = self._apply_tuning_overrides(tuning_config)
         return tuning_config.dynamic_tensor_specs[spec_idx].map_to_tuning_buckets
 
+    def lookup_epoch(self) -> int | None:
+        """Token for reusing non-tuning ``choose_one`` results on hot paths.
+
+        Returns ``None`` while a lookup may change from call to call: in
+        tuning mode, under an override or skip_ops context on this thread, or
+        while winners come from a managed store or measurement-policy
+        partition. Otherwise returns a counter that changes whenever the
+        in-memory or file-loaded winners change, so a ``(runner, tactic)``
+        cached together with it stays valid while it is unchanged.
+        """
+        if (
+            self.is_tuning_mode
+            or self._get_override_stack()
+            or self._get_skip_ops_stack()
+            or self._winner_cache_identity() is not None
+        ):
+            return None
+        return self._lookup_epoch
+
     def search_cache(
         self,
         custom_op: str,
@@ -2068,6 +2091,7 @@ class AutoTuner:
                     # Promote winner and provenance together within this store's
                     # partition; replay may promote entries of unknown policy.
                     winners[cache_key] = (tactic, None)
+                    self._lookup_epoch += 1
                     self._profiling_cache_policies[(winner_identity, cache_key)] = (
                         hit.profiling_policy
                     )
@@ -2548,6 +2572,7 @@ class AutoTuner:
                                 runners[runner_id].get_cache_key_extras(tensors),
                             )
                             self._winner_cache()[cache_key] = (tactic, p)
+                            self._lookup_epoch += 1
                             profiling_policy = self._profiling_policy(tuning_config)
                             self._profiling_cache_policies[
                                 (self._winner_cache_identity(), cache_key)
@@ -2753,6 +2778,7 @@ class AutoTuner:
             # Populate the choose_one cache with the winner so stage lookups
             # remain consistent between rank_tactics and choose_one.
             self.profiling_cache[cache_key] = (ranked[0], profile)
+            self._lookup_epoch += 1
             # profiling_cache is the unpartitioned winner cache, so its
             # provenance lives under the None winner identity.
             self._profiling_cache_policies[(None, cache_key)] = policy
@@ -3803,6 +3829,7 @@ class AutoTuner:
                 self._file_config_policies.pop(key, None)
                 if len(value) > 2:
                     self._file_config_policies[key] = tuple(value[2])
+            self._lookup_epoch += 1
 
         if skipped_legacy_cudnn_tactics:
             logger.warning(
@@ -3942,6 +3969,7 @@ class AutoTuner:
             self._logged_cache_miss_oor.clear()
             self._dirty = False
             self._dirty_seq = 0
+            self._lookup_epoch += 1
             self._winner_partitions.clear()
             self._managed_decoded.clear()
             # Forget the hydration markers too, or the next attach would
