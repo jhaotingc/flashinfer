@@ -35,6 +35,13 @@ if is_cute_dsl_available():
         cute_dsl_fused_moe_bf16,
         CuteDslBf16MoEWrapper,
     )
+    from .sm90_fp8_block_moe import (
+        Sm90Fp8BlockMoEWeights,
+        Sm90Fp8BlockMoEWorkspace,
+        cute_dsl_fused_moe_fp8_block_scale_sm90,
+        is_sm90_fp8_block_moe_supported,
+        prepare_sm90_fp8_block_moe_weights,
+    )
 
     from .blackwell_sm12x import (
         cute_dsl_sm12x_moe_gemm_fp8,
@@ -66,6 +73,11 @@ if is_cute_dsl_available():
         "b12x_fused_moe",
         "B12xMoEWrapper",
         "cute_dsl_fused_moe_bf16",
+        "Sm90Fp8BlockMoEWeights",
+        "Sm90Fp8BlockMoEWorkspace",
+        "cute_dsl_fused_moe_fp8_block_scale_sm90",
+        "is_sm90_fp8_block_moe_supported",
+        "prepare_sm90_fp8_block_moe_weights",
         "CuteDslBf16MoEWrapper",
         "cute_dsl_sm12x_moe_gemm_fp8",
         "cute_dsl_sm12x_moe_gemm_mxfp8_mxfp4",
